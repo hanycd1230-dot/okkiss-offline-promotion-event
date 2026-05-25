@@ -13,8 +13,9 @@ DATA_DIR.mkdir(exist_ok=True)
 DATA_FILE = DATA_DIR / "sales_records.csv"
 INVENTORY_FILE = DATA_DIR / "inventory_movements.csv"
 COST_FILE = DATA_DIR / "cost_records.csv"
+RETURN_FILE = DATA_DIR / "return_records.csv"
 
-PAGE_OPTIONS = ["销售录入", "库存管理", "费用与成本", "盈利分析与洞察"]
+PAGE_OPTIONS = ["销售录入", "销售记录/删除单据", "退货登记", "库存管理", "费用与成本", "盈利分析与洞察"]
 
 PRODUCT_LIST = [
     "草莓", "小草莓", "蜜桃", "蜜桃乌龙无醇", "阿斯蒂甜白",
@@ -43,6 +44,7 @@ def init_file(path, cols):
 init_file(DATA_FILE, ["日期", "城市", "活动地点", "产品名称", "销售类型", "数量", "单价", "总价", "折扣", "备注"])
 init_file(INVENTORY_FILE, ["日期", "产品名称", "变动类型", "数量", "备注"])
 init_file(COST_FILE, ["日期", "费用类型", "金额", "备注"])
+init_file(RETURN_FILE, ["日期", "产品名称", "销售类型", "数量", "原因", "备注"])
 
 # ===================== 页面初始化 =====================
 st.set_page_config(page_title=APP_TITLE, layout="wide")
@@ -52,14 +54,13 @@ page = st.sidebar.radio("功能模块", PAGE_OPTIONS)
 if "pwd_verified" not in st.session_state:
     st.session_state.pwd_verified = False
 
-# ===================== 保存订单函数 =====================
+# ===================== 通用函数 =====================
 def save_order(city, location, product, sale_type, qty, price, discount, remark):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     final_price = round(price * discount, 2)
     total = final_price * qty
     disc_text = f"{discount*10:.1f}折"
 
-    # 销售记录
     row = {
         "日期": now, "城市": city, "活动地点": location, "产品名称": product,
         "销售类型": sale_type, "数量": qty, "单价": price, "总价": total,
@@ -69,7 +70,6 @@ def save_order(city, location, product, sale_type, qty, price, discount, remark)
     df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
 
-    # 库存记录
     inv_type = "出库" if sale_type != "试饮" else "试饮消耗"
     inv_row = {"日期": now, "产品名称": product, "变动类型": inv_type, "数量": -qty, "备注": sale_type}
     inv_df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
@@ -77,11 +77,47 @@ def save_order(city, location, product, sale_type, qty, price, discount, remark)
     inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
     return total
 
-# ===================== 销售录入（纯手动） =====================
+# 删除单条销售记录并恢复库存
+def del_sale_record(idx):
+    sales_df = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
+    if idx < 0 or idx >= len(sales_df):
+        return False
+    row = sales_df.iloc[idx]
+    product = row["产品名称"]
+    sale_type = row["销售类型"]
+    qty = int(row["数量"])
+
+    # 删除销售记录
+    sales_df = sales_df.drop(idx).reset_index(drop=True)
+    sales_df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
+
+    # 恢复库存
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    inv_df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
+    inv_row = {"日期": now, "产品名称": product, "变动类型": "退货/撤销单据", "数量": qty, "备注": f"撤销{sale_type}单据"}
+    inv_df = pd.concat([inv_df, pd.DataFrame([inv_row])], ignore_index=True)
+    inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
+    return True
+
+# 登记退货并恢复库存
+def add_return(product, sale_type, qty, reason, remark):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # 保存退货记录
+    ret_row = {"日期": now, "产品名称": product, "销售类型": sale_type, "数量": qty, "原因": reason, "备注": remark}
+    ret_df = pd.read_csv(RETURN_FILE, encoding="utf-8-sig")
+    ret_df = pd.concat([ret_df, pd.DataFrame([ret_row])], ignore_index=True)
+    ret_df.to_csv(RETURN_FILE, index=False, encoding="utf-8-sig")
+
+    # 恢复库存
+    inv_df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
+    inv_row = {"日期": now, "产品名称": product, "变动类型": "退货入库", "数量": qty, "备注": f"{sale_type}退货"}
+    inv_df = pd.concat([inv_df, pd.DataFrame([inv_row])], ignore_index=True)
+    inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
+
+# ===================== 1. 销售录入（原有功能不变） =====================
 if page == "销售录入":
     st.header("✅ 销售录入（纯手动）")
 
-    # 公共信息
     c1, c2 = st.columns(2)
     with c1:
         city = st.selectbox("城市", ["上海", "杭州", "南京", "苏州", "其他"])
@@ -94,7 +130,6 @@ if page == "销售录入":
 
     st.divider()
 
-    # 表单录入
     product = st.selectbox("产品名称", PRODUCT_LIST)
     sale_type = st.radio("销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
     qty = st.number_input("数量", min_value=1, value=1)
@@ -102,17 +137,50 @@ if page == "销售录入":
     discount = st.number_input("折扣率（9折=0.9）", min_value=0.1, max_value=1.0, value=1.0)
     remark = st.text_input("备注")
 
-    # 计算总价
     final_price = round(price * discount, 2)
     total = final_price * qty
     st.success(f"💰 订单总价：{total:.2f} 元")
 
-    # 保存按钮
     if st.button("✅ 保存当前订单"):
         save_order(city, location, product, sale_type, qty, price, discount, remark)
         st.success("✅ 保存成功，库存已更新！")
 
-# ===================== 库存管理 =====================
+# ===================== 2. 销售记录 & 删除错误单据（新增） =====================
+elif page == "销售记录/删除单据":
+    st.header("📋 全部销售记录 | 删除错误单据")
+    st.warning("⚠️ 删除单据后会自动恢复对应库存，请谨慎操作！")
+    df_sale = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
+    df_sale.index.name = "序号"
+    st.dataframe(df_sale, use_container_width=True)
+
+    st.divider()
+    st.subheader("🗑️ 删除指定单据")
+    del_idx = st.number_input("输入要删除的【序号】", min_value=0, value=0)
+    if st.button("❌ 删除该条单据"):
+        if del_sale_record(del_idx):
+            st.success("✅ 删除成功，库存已恢复！请刷新页面查看最新记录")
+        else:
+            st.error("❌ 序号不存在，请检查后重试")
+
+# ===================== 3. 退货登记（新增） =====================
+elif page == "退货登记":
+    st.header("🔄 客户退货登记")
+    product = st.selectbox("退货产品", PRODUCT_LIST)
+    sale_type = st.radio("原销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
+    ret_qty = st.number_input("退货数量", min_value=1, value=1)
+    ret_reason = st.selectbox("退货原因", ["品质问题", "客户拒收", "拍错/买多", "其他"])
+    ret_remark = st.text_input("补充备注")
+
+    if st.button("✅ 确认退货"):
+        add_return(product, sale_type, ret_qty, ret_reason, ret_remark)
+        st.success("✅ 退货登记完成，商品已恢复库存！")
+
+    st.divider()
+    st.subheader("📄 历史退货记录")
+    df_ret = pd.read_csv(RETURN_FILE, encoding="utf-8-sig")
+    st.dataframe(df_ret, use_container_width=True)
+
+# ===================== 4. 库存管理（原有功能不变） =====================
 elif page == "库存管理":
     st.header("📦 库存管理")
     df_inv = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
@@ -123,7 +191,7 @@ elif page == "库存管理":
     st.dataframe(stock, use_container_width=True)
 
     st.divider()
-    st.subheader("入库登记")
+    st.subheader("➡️ 入库登记")
     with st.form("stock_in_form"):
         prod_in = st.selectbox("选择产品", PRODUCT_LIST)
         num_in = st.number_input("入库数量", min_value=1)
@@ -138,7 +206,7 @@ elif page == "库存管理":
     st.subheader("库存流水记录")
     st.dataframe(df_inv, use_container_width=True)
 
-# ===================== 费用与成本 =====================
+# ===================== 5. 费用与成本（原有功能不变） =====================
 elif page == "费用与成本":
     st.header("🧾 费用与成本")
     if not st.session_state.pwd_verified:
@@ -164,7 +232,7 @@ elif page == "费用与成本":
         st.divider()
         st.dataframe(pd.read_csv(COST_FILE, encoding="utf-8-sig"), use_container_width=True)
 
-# ===================== 盈利分析 =====================
+# ===================== 6. 盈利分析（原有功能不变） =====================
 elif page == "盈利分析与洞察":
     st.header("📈 盈利分析")
     if not st.session_state.pwd_verified:
