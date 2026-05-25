@@ -3,7 +3,6 @@ from datetime import date, datetime
 from pathlib import Path
 import pandas as pd
 import streamlit as st
-import re
 
 # ===================== 基础配置 =====================
 APP_TITLE = "OKKISS 地推销售与库存管理"
@@ -50,51 +49,10 @@ st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.title(APP_TITLE)
 page = st.sidebar.radio("功能模块", PAGE_OPTIONS)
 
-# 会话状态：单独存储每个字段语音结果
-if "voice_product" not in st.session_state:
-    st.session_state.voice_product = ""
-if "voice_type" not in st.session_state:
-    st.session_state.voice_type = ""
-if "voice_qty" not in st.session_state:
-    st.session_state.voice_qty = ""
-if "voice_price" not in st.session_state:
-    st.session_state.voice_price = ""
-if "voice_discount" not in st.session_state:
-    st.session_state.voice_discount = ""
-if "voice_remark" not in st.session_state:
-    st.session_state.voice_remark = ""
 if "pwd_verified" not in st.session_state:
     st.session_state.pwd_verified = False
 
-# ===================== 简易解析工具（高容错） =====================
-def get_num(text):
-    """提取数字，容错最高"""
-    res = re.findall(r"\d+", text)
-    return res[0] if res else ""
-
-def match_product(text):
-    """模糊匹配产品"""
-    for p in PRODUCT_LIST:
-        if p in text:
-            return p
-    return ""
-
-def match_sale_type(text):
-    if "杯" in text:
-        return "杯卖"
-    if "瓶" in text:
-        return "瓶卖"
-    return ""
-
-def match_discount(text):
-    num = get_num(text)
-    if num:
-        n = int(num)
-        if 1 <= n <= 10:
-            return n / 10
-    return 1.0
-
-# ===================== 保存函数 =====================
+# ===================== 保存订单函数 =====================
 def save_order(city, location, product, sale_type, qty, price, discount, remark):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     final_price = round(price * discount, 2)
@@ -119,10 +77,9 @@ def save_order(city, location, product, sale_type, qty, price, discount, remark)
     inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
     return total
 
-# ===================== 销售录入（单字段语音 + 手动同屏） =====================
+# ===================== 销售录入（纯手动） =====================
 if page == "销售录入":
-    st.header("✅ 销售录入 | 分字段语音 + 手动输入（高灵敏）")
-    st.info("💡 建议：逐个点麦克风说短内容，比一整段识别更稳！嘈杂环境优先手动")
+    st.header("✅ 销售录入（纯手动）")
 
     # 公共信息
     c1, c2 = st.columns(2)
@@ -136,79 +93,16 @@ if page == "销售录入":
         location = st.text_input("输入地点")
 
     st.divider()
-    st.subheader("🎤 分字段语音录入（每个字段独立麦克风）")
 
-    # 1. 产品名称
-    col_p1, col_p2 = st.columns([4,1])
-    with col_p2:
-        audio_p = st.audio_input("产品")
-        if audio_p:
-            st.session_state.voice_product = st.text_input("产品语音", value="", key="vp")
-    prod_text = st.session_state.voice_product
-    match_p = match_product(prod_text)
-    default_p = match_p if match_p else PRODUCT_LIST[0]
-    with col_p1:
-        product = st.selectbox("产品名称", PRODUCT_LIST, index=PRODUCT_LIST.index(default_p))
+    # 表单录入
+    product = st.selectbox("产品名称", PRODUCT_LIST)
+    sale_type = st.radio("销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
+    qty = st.number_input("数量", min_value=1, value=1)
+    price = st.number_input("单价", min_value=0.01, value=float(PRODUCT_PRICES[product][sale_type]))
+    discount = st.number_input("折扣率（9折=0.9）", min_value=0.1, max_value=1.0, value=1.0)
+    remark = st.text_input("备注")
 
-    # 2. 销售类型（杯/瓶）
-    col_t1, col_t2 = st.columns([4,1])
-    with col_t2:
-        audio_t = st.audio_input("杯/瓶")
-        if audio_t:
-            st.session_state.voice_type = st.text_input("类型语音", value="", key="vt")
-    type_text = st.session_state.voice_type
-    match_t = match_sale_type(type_text)
-    type_list = ["瓶卖", "杯卖", "试饮"]
-    default_t = match_t if match_t else "瓶卖"
-    with col_t1:
-        sale_type = st.radio("销售类型", type_list, horizontal=True, index=type_list.index(default_t))
-
-    # 3. 数量
-    col_q1, col_q2 = st.columns([4,1])
-    with col_q2:
-        audio_q = st.audio_input("数量")
-        if audio_q:
-            st.session_state.voice_qty = st.text_input("数量语音", value="", key="vq")
-    qty_text = st.session_state.voice_qty
-    qty_num = get_num(qty_text)
-    default_q = int(qty_num) if qty_num else 1
-    with col_q1:
-        qty = st.number_input("数量", min_value=1, value=default_q)
-
-    # 4. 单价
-    col_pr1, col_pr2 = st.columns([4,1])
-    with col_pr2:
-        audio_pr = st.audio_input("单价")
-        if audio_pr:
-            st.session_state.voice_price = st.text_input("单价语音", value="", key="vpr")
-    price_text = st.session_state.voice_price
-    price_num = get_num(price_text)
-    default_pr = float(price_num) if price_num else PRODUCT_PRICES[product][sale_type]
-    with col_pr1:
-        price = st.number_input("单价", min_value=0.01, value=default_pr)
-
-    # 5. 折扣
-    col_d1, col_d2 = st.columns([4,1])
-    with col_d2:
-        audio_d = st.audio_input("折扣")
-        if audio_d:
-            st.session_state.voice_discount = st.text_input("折扣语音", value="", key="vd")
-    disc_text = st.session_state.voice_discount
-    disc_val = match_discount(disc_text)
-    with col_d1:
-        discount = st.number_input("折扣率（9折=0.9）", min_value=0.1, max_value=1.0, value=disc_val)
-
-    # 6. 备注
-    col_r1, col_r2 = st.columns([4,1])
-    with col_r2:
-        audio_r = st.audio_input("备注")
-        if audio_r:
-            st.session_state.voice_remark = st.text_input("备注语音", value="", key="vr")
-    remark = st.session_state.voice_remark
-    with col_r1:
-        remark = st.text_input("备注", value=remark)
-
-    # 总价计算
+    # 计算总价
     final_price = round(price * discount, 2)
     total = final_price * qty
     st.success(f"💰 订单总价：{total:.2f} 元")
@@ -217,13 +111,6 @@ if page == "销售录入":
     if st.button("✅ 保存当前订单"):
         save_order(city, location, product, sale_type, qty, price, discount, remark)
         st.success("✅ 保存成功，库存已更新！")
-        # 清空语音缓存，下一笔重新录入
-        st.session_state.voice_product = ""
-        st.session_state.voice_type = ""
-        st.session_state.voice_qty = ""
-        st.session_state.voice_price = ""
-        st.session_state.voice_discount = ""
-        st.session_state.voice_remark = ""
 
 # ===================== 库存管理 =====================
 elif page == "库存管理":
