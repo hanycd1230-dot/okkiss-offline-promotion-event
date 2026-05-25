@@ -36,21 +36,6 @@ PRODUCT_PRICES = {
     "赤霞珠": {"瓶卖": 228, "杯卖": 65}
 }
 
-# -------------------------- 产品图片 --------------------------
-PRODUCT_IMAGES = {
-    "草莓": "https://via.placeholder.com/300x400.png?text=草莓",
-    "小草莓": "https://via.placeholder.com/300x400.png?text=小草莓",
-    "蜜桃": "https://via.placeholder.com/300x400.png?text=蜜桃",
-    "蜜桃乌龙无醇": "https://via.placeholder.com/300x400.png?text=蜜桃乌龙无醇",
-    "阿斯蒂甜白": "https://via.placeholder.com/300x400.png?text=阿斯蒂甜白",
-    "莫斯卡托桃红": "https://via.placeholder.com/300x400.png?text=莫斯卡托桃红",
-    "绿宝石": "https://via.placeholder.com/300x400.png?text=绿宝石",
-    "紫宝石": "https://via.placeholder.com/300x400.png?text=紫宝石",
-    "快乐王子": "https://via.placeholder.com/300x400.png?text=快乐王子",
-    "长相思": "https://via.placeholder.com/300x400.png?text=长相思",
-    "赤霞珠": "https://via.placeholder.com/300x400.png?text=赤霞珠"
-}
-
 # -------------------------- 初始化文件 --------------------------
 def init_file(path, cols):
     if not path.exists():
@@ -70,7 +55,7 @@ if "pwd_verified" not in st.session_state:
     st.session_state.pwd_verified = False
 
 # ======================================================================================
-# ===================================== 销售录入（已改：图片左移 + 自定义折扣） =======================================
+# ===================================== 销售录入（已移除图片） =======================================
 # ======================================================================================
 if page == "销售录入":
     st.header("✅ 销售录入")
@@ -87,87 +72,80 @@ if page == "销售录入":
 
     st.divider()
 
-    # ========== 产品图片 放在左边 ==========
-    img_col, form_col = st.columns([1, 2])
-    with img_col:
-        st.subheader("产品图")
-        product = st.selectbox("产品名称", PRODUCT_LIST)
-        st.image(PRODUCT_IMAGES[product], caption=product, width=250)
+    product = st.selectbox("产品名称", PRODUCT_LIST)
+    sales_type = st.radio("销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
 
-    with form_col:
-        sales_type = st.radio("销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
+    default_bottle = PRODUCT_PRICES[product]["瓶卖"]
+    default_cup = PRODUCT_PRICES[product]["杯卖"]
 
-        default_bottle = PRODUCT_PRICES[product]["瓶卖"]
-        default_cup = PRODUCT_PRICES[product]["杯卖"]
+    # 定价方式
+    if sales_type == "瓶卖":
+        price_mode = st.radio("瓶卖定价", ["默认价格", "自定义单价"], horizontal=True)
+    elif sales_type == "杯卖":
+        price_mode = st.radio("杯卖定价", ["默认价格", "自定义单价"], horizontal=True)
+    else:
+        price_mode = "默认价格"
 
-        # 定价方式
-        if sales_type == "瓶卖":
-            price_mode = st.radio("瓶卖定价", ["默认价格", "自定义单价"], horizontal=True)
-        elif sales_type == "杯卖":
-            price_mode = st.radio("杯卖定价", ["默认价格", "自定义单价"], horizontal=True)
+    qty = st.number_input("数量", min_value=1, value=1)
+    price = 0.0
+    discount = "无"
+
+    # 瓶卖
+    if sales_type == "瓶卖":
+        if price_mode == "默认价格":
+            price = default_bottle
         else:
-            price_mode = "默认价格"
+            price = st.number_input("自定义单价", min_value=0.01, value=float(default_bottle), step=0.01)
 
-        qty = st.number_input("数量", min_value=1, value=1)
+        # 自定义折扣
+        discount_val = st.number_input("折扣率（例：9折=0.9，85折=0.85）", min_value=0.1, max_value=1.0, value=1.0, step=0.01)
+        price = round(price * discount_val, 2)
+        discount = f"{int(discount_val*10)}折" if discount_val *10 == int(discount_val*10) else f"{discount_val*10:.1f}折"
+
+    # 杯卖
+    elif sales_type == "杯卖":
+        if price_mode == "默认价格":
+            price = default_cup
+        else:
+            price = st.number_input("自定义单价", min_value=0.01, value=float(default_cup), step=0.01)
+
+    # 试饮
+    else:
         price = 0.0
-        discount = "无"
 
-        # 瓶卖
-        if sales_type == "瓶卖":
-            if price_mode == "默认价格":
-                price = default_bottle
-            else:
-                price = st.number_input("自定义单价", min_value=0.01, value=float(default_bottle), step=0.01)
+    total = price * qty
+    st.success(f"💰 总价：{total:.2f} 元")
+    remark = st.text_input("备注")
 
-            # ========== 自定义折扣（手动输入） ==========
-            discount_val = st.number_input("折扣率（例：9折=0.9，85折=0.85）", min_value=0.1, max_value=1.0, value=1.0, step=0.01)
-            price = round(price * discount_val, 2)
-            discount = f"{int(discount_val*10)}折" if discount_val *10 == int(discount_val*10) else f"{discount_val*10:.1f}折"
+    if st.button("✅ 保存记录"):
+        row = {
+            "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "城市": city,
+            "活动地点": location,
+            "产品名称": product,
+            "销售类型": sales_type,
+            "数量": qty,
+            "单价": price,
+            "总价": total,
+            "折扣": discount if sales_type == "瓶卖" else "无",
+            "备注": remark
+        }
+        df = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
 
-        # 杯卖
-        elif sales_type == "杯卖":
-            if price_mode == "默认价格":
-                price = default_cup
-            else:
-                price = st.number_input("自定义单价", min_value=0.01, value=float(default_cup), step=0.01)
+        inv_row = {
+            "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "产品名称": product,
+            "变动类型": "出库" if sales_type != "试饮" else "试饮消耗",
+            "数量": -qty,
+            "备注": sales_type
+        }
+        inv_df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
+        inv_df = pd.concat([inv_df, pd.DataFrame([inv_row])], ignore_index=True)
+        inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
 
-        # 试饮
-        else:
-            price = 0.0
-
-        total = price * qty
-        st.success(f"💰 总价：{total:.2f} 元")
-        remark = st.text_input("备注")
-
-        if st.button("✅ 保存记录"):
-            row = {
-                "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "城市": city,
-                "活动地点": location,
-                "产品名称": product,
-                "销售类型": sales_type,
-                "数量": qty,
-                "单价": price,
-                "总价": total,
-                "折扣": discount if sales_type == "瓶卖" else "无",
-                "备注": remark
-            }
-            df = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
-            df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-            df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
-
-            inv_row = {
-                "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "产品名称": product,
-                "变动类型": "出库" if sales_type != "试饮" else "试饮消耗",
-                "数量": -qty,
-                "备注": sales_type
-            }
-            inv_df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
-            inv_df = pd.concat([inv_df, pd.DataFrame([inv_row])], ignore_index=True)
-            inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
-
-            st.success("✅ 保存成功！库存已同步！")
+        st.success("✅ 保存成功！库存已同步！")
 
 # ======================================================================================
 # ===================================== 库存管理 =======================================
@@ -298,7 +276,6 @@ elif page == "盈利分析与洞察":
             if total_test > 0 and total_bottle > 0:
                 rate = total_bottle / total_test
                 st.success(f"✅ 平均 **{rate:.2f} 杯试饮 → 成交 1 瓶**")
-                st.info("可直接核算单瓶成交对应的试饮成本")
             else:
                 st.info("试饮或瓶卖数据不足，暂时无法计算转化率")
 
