@@ -70,10 +70,10 @@ if "pwd_verified" not in st.session_state:
     st.session_state.pwd_verified = False
 
 # ======================================================================================
-# ===================================== 销售录入（带产品图片） =======================================
+# ===================================== 销售录入（带产品图片+自定义单价） =======================================
 # ======================================================================================
 if page == "销售录入":
-    st.header("✅ 销售录入（带产品图）")
+    st.header("✅ 销售录入（带产品图 + 自定义单价）")
     col1, col2 = st.columns(2)
     with col1:
         city = st.selectbox("城市", ["上海", "杭州", "南京", "苏州", "其他"])
@@ -93,21 +93,45 @@ if page == "销售录入":
         with st.form("sales_form"):
             product = st.selectbox("产品名称", PRODUCT_LIST)
             sales_type = st.radio("销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
+
             qty = st.number_input("数量", min_value=1, value=1)
             price = 0
             total = 0
             discount = "无"
 
-            if sales_type in ["瓶卖", "杯卖"]:
-                price = PRODUCT_PRICES[product][sales_type]
-                if sales_type == "瓶卖":
-                    discount = st.radio("折扣", ["无", "2瓶9折", "3瓶85折"], horizontal=True)
-                    if discount == "2瓶9折" and qty >= 2:
-                        price = round(price * 0.9, 2)
-                    if discount == "3瓶85折" and qty >= 3:
-                        price = round(price * 0.85, 2)
+            # ---- 瓶卖：默认价 / 自定义单价 ----
+            if sales_type == "瓶卖":
+                bottle_mode = st.radio("瓶卖定价方式", ["默认价格", "自定义单价"], horizontal=True)
+                default_bottle_price = PRODUCT_PRICES[product]["瓶卖"]
+                if bottle_mode == "默认价格":
+                    price = default_bottle_price
+                else:
+                    price = st.number_input("自定义单价（元）", min_value=0.01, value=float(default_bottle_price), step=0.01)
+                # 折扣逻辑保留
+                discount = st.radio("折扣", ["无", "2瓶9折", "3瓶85折"], horizontal=True)
+                if discount == "2瓶9折" and qty >= 2:
+                    price = round(price * 0.9, 2)
+                if discount == "3瓶85折" and qty >= 3:
+                    price = round(price * 0.85, 2)
                 total = price * qty
                 st.success(f"💰 总价：{total} 元")
+
+            # ---- 杯卖：默认价 / 自定义单价 ----
+            elif sales_type == "杯卖":
+                cup_mode = st.radio("杯卖定价方式", ["默认价格", "自定义单价"], horizontal=True)
+                default_cup_price = PRODUCT_PRICES[product]["杯卖"]
+                if cup_mode == "默认价格":
+                    price = default_cup_price
+                else:
+                    price = st.number_input("自定义单价（元）", min_value=0.01, value=float(default_cup_price), step=0.01)
+                total = price * qty
+                st.success(f"💰 总价：{total} 元")
+
+            # ---- 试饮：0 元 ----
+            elif sales_type == "试饮":
+                price = 0
+                total = 0
+                st.info("🥂 试饮不计金额")
 
             remark = st.text_input("备注")
             submit = st.form_submit_button("✅ 保存记录")
