@@ -52,10 +52,6 @@ page = st.sidebar.radio("功能模块", PAGE_OPTIONS)
 
 if "pwd_verified" not in st.session_state:
     st.session_state.pwd_verified = False
-
-# 会话状态初始化
-if "auto_save_done" not in st.session_state:
-    st.session_state.auto_save_done = False
 if "parsed_data" not in st.session_state:
     st.session_state.parsed_data = None
 
@@ -86,26 +82,20 @@ def parse_one_shot(text: str):
         "discount": 1.0,
         "remark": ""
     }
-    # 匹配产品
     for p in PRODUCT_LIST:
         if p in text:
             res["product"] = p
             break
-    # 匹配杯/瓶
     if "杯" in text:
         res["sale_type"] = "杯卖"
     elif "瓶" in text:
         res["sale_type"] = "瓶卖"
-    # 提取数字
     nums = re.findall(r"\d+\.?\d*", text)
-    # 折扣
     res["discount"] = parse_discount(text)
-    # 数量、单价
     if len(nums) >= 1:
         res["qty"] = int(float(nums[0]))
     if len(nums) >= 2:
         res["price"] = float(nums[1])
-    # 提取备注
     clean_text = re.sub("|".join(PRODUCT_LIST) + r"|杯|瓶|元|块|折|\d+\.?\d*", "", text)
     res["remark"] = clean_text.strip()
     return res
@@ -113,7 +103,6 @@ def parse_one_shot(text: str):
 # 保存销售+库存记录
 def save_sale_record(city, location, product, sale_type, qty, price, total, discount, remark):
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    # 销售记录
     row = {
         "日期": now_str, "城市": city, "活动地点": location, "产品名称": product,
         "销售类型": sale_type, "数量": qty, "单价": price, "总价": total,
@@ -122,7 +111,7 @@ def save_sale_record(city, location, product, sale_type, qty, price, total, disc
     df = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
     df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
-    # 库存记录
+
     inv_type = "出库" if sale_type != "试饮" else "试饮消耗"
     inv_row = {
         "日期": now_str, "产品名称": product, "变动类型": inv_type,
@@ -132,10 +121,9 @@ def save_sale_record(city, location, product, sale_type, qty, price, total, disc
     inv_df = pd.concat([inv_df, pd.DataFrame([inv_row])], ignore_index=True)
     inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
 
-# -------------------------- 主页面逻辑 --------------------------
+# -------------------------- 销售录入主逻辑 --------------------------
 if page == "销售录入":
-    st.header("✅ 销售录入 | 语音极速自动下单")
-    mode = st.radio("录入模式", ["🎤 语音一键自动下单", "⚡ 批量快速开单"], horizontal=True)
+    st.header("✅ 销售录入 | 语音+手动 双输入（同时显示）")
 
     # 公共基础信息
     col1, col2 = st.columns(2)
@@ -150,118 +138,58 @@ if page == "销售录入":
 
     st.divider()
 
-    # ========== 模式1：语音一键自动下单（核心） ==========
-    if mode == "🎤 语音一键自动下单":
-        st.subheader("🎙️ 操作规则：点击麦克风 → 一口气说完 → 自动识别+自动保存")
-        st.info("标准话术示例：蜜桃 5杯 35 9折 地推新客")
+    # ========== 上半区：语音输入区 ==========
+    st.subheader("🎤 语音输入（说完自动填入下方表单）")
+    st.info("示例：蜜桃 5杯 35 9折 地推新客")
+    audio = st.audio_input("🎤 点击麦克风，一口气说完订单信息")
+    if audio:
+        st.info("识别中...")
+        voice_text = st.text_input("语音识别结果（可改）", key="voice_full")
+        if voice_text:
+            st.session_state.parsed_data = parse_one_shot(voice_text)
 
-        # 语音录制
-        audio = st.audio_input("🎤 点击开始语音下单")
-        if audio:
-            st.info("正在识别语音，请稍等...")
-            voice_text = st.text_input("识别结果（可手动修改）", key="voice_full")
-            if voice_text:
-                # 解析语音内容
-                parsed = parse_one_shot(voice_text)
-                st.session_state.parsed_data = parsed
-                st.session_state.auto_save_done = False
+    st.divider()
 
-        # 回填表单 + 自动保存
-        if st.session_state.parsed_data and not st.session_state.auto_save_done:
-            pd_data = st.session_state.parsed_data
-            # 产品
-            default_prod = pd_data["product"] if pd_data["product"] in PRODUCT_LIST else PRODUCT_LIST[0]
-            product = st.selectbox("产品名称", PRODUCT_LIST, index=PRODUCT_LIST.index(default_prod))
-            # 销售类型
-            stype_list = ["瓶卖", "杯卖", "试饮"]
-            default_stype = pd_data["sale_type"] if pd_data["sale_type"] in stype_list else "瓶卖"
-            sales_type = st.radio("销售类型", stype_list, horizontal=True, index=stype_list.index(default_stype))
-            # 数量
-            default_qty = pd_data["qty"] if pd_data["qty"] else 1
-            qty = st.number_input("数量", min_value=1, value=default_qty)
-            # 单价
-            default_price = pd_data["price"] if pd_data["price"] else PRODUCT_PRICES[product][sales_type]
-            price = st.number_input("单价", min_value=0.01, value=float(default_price))
-            # 折扣
-            discount_val = st.number_input("折扣率（9折=0.9）", min_value=0.1, max_value=1.0, value=pd_data["discount"])
-            # 备注
-            remark = st.text_input("备注", value=pd_data["remark"])
+    # ========== 下半区：完整手动表单区（语音自动回填） ==========
+    st.subheader("📝 手动表单（可直接手填，也可语音自动填入）")
+    pd_data = st.session_state.parsed_data
 
-            # 计算最终价格与总价
-            final_price = round(price * discount_val, 2)
-            total = final_price * qty
-            discount_text = f"{discount_val * 10:.1f}折"
-            st.success(f"💰 核算总价：{total:.2f} 元")
+    # 产品
+    prod_def = pd_data["product"] if (pd_data and pd_data["product"] in PRODUCT_LIST) else PRODUCT_LIST[0]
+    product = st.selectbox("产品名称", PRODUCT_LIST, index=PRODUCT_LIST.index(prod_def))
 
-            # 自动保存
-            save_sale_record(city, location, product, sales_type, qty, final_price, total, discount_text, remark)
-            st.success("✅ 已自动保存！库存同步完成，可继续下一笔订单")
-            # 标记已保存，防止重复提交
-            st.session_state.auto_save_done = True
-            # 清空解析数据，准备下一轮
-            st.session_state.parsed_data = None
+    # 销售类型
+    stype_list = ["瓶卖", "杯卖", "试饮"]
+    stype_def = pd_data["sale_type"] if (pd_data and pd_data["sale_type"]) else "瓶卖"
+    sales_type = st.radio("销售类型", stype_list, horizontal=True, index=stype_list.index(stype_def))
 
-    # ========== 模式2：批量快速开单（保留原有功能） ==========
-    else:
-        st.subheader("⚡ 批量开单（适合多人同品类集中下单）")
-        cup_col, bottle_col = st.columns(2)
-        cup_num, bottle_num = 0, 0
+    # 数量
+    qty_def = pd_data["qty"] if (pd_data and pd_data["qty"]) else 1
+    qty = st.number_input("数量", min_value=1, value=qty_def)
 
-        with cup_col:
-            st.markdown("**🍷 批量杯卖**")
-            cup_product = st.selectbox("杯卖产品", PRODUCT_LIST, key="cup_prod")
-            c_col1, c_col2 = st.columns([3,1])
-            with c_col1:
-                cup_num = st.number_input("总杯数", min_value=0, value=0, key="cup_num")
-            with c_col2:
-                audio_cup = st.audio_input("🎤 报杯数")
-                if audio_cup:
-                    txt_cup = st.text_input("杯数识别结果", key="cup_voice")
-                    n = extract_number(txt_cup)
-                    if n:
-                        cup_num = int(n)
+    # 单价
+    price_def = pd_data["price"] if (pd_data and pd_data["price"]) else PRODUCT_PRICES[product][sales_type]
+    price = st.number_input("单价", min_value=0.01, value=float(price_def))
 
-        with bottle_col:
-            st.markdown("**🍾 批量瓶卖**")
-            bottle_product = st.selectbox("瓶卖产品", PRODUCT_LIST, key="bottle_prod")
-            b_col1, b_col2 = st.columns([3,1])
-            with b_col1:
-                bottle_num = st.number_input("总瓶数", min_value=0, value=0, key="bottle_num")
-            with b_col2:
-                audio_bottle = st.audio_input("🎤 报瓶数")
-                if audio_bottle:
-                    txt_bottle = st.text_input("瓶数识别结果", key="bottle_voice")
-                    n = extract_number(txt_bottle)
-                    if n:
-                        bottle_num = int(n)
+    # 折扣
+    disc_def = pd_data["discount"] if (pd_data and pd_data["discount"]) else 1.0
+    discount_val = st.number_input("折扣率（9折=0.9）", min_value=0.1, max_value=1.0, value=disc_def)
 
-        # 批量备注
-        bat_col1, bat_col2 = st.columns([4,1])
-        with bat_col1:
-            batch_remark = st.text_input("批量备注(选填)")
-        with bat_col2:
-            audio_rem = st.audio_input("🎤 语音备注")
-            if audio_rem:
-                txt_rem = st.text_input("备注识别结果", key="rem_voice")
-                batch_remark = txt_rem
+    # 备注
+    remark_def = pd_data["remark"] if (pd_data and pd_data["remark"]) else ""
+    remark = st.text_input("备注", value=remark_def)
 
-        submit_batch = st.button("🚀 一键批量提交")
-        if submit_batch:
-            success_msg = []
-            if cup_num > 0:
-                p = PRODUCT_PRICES[cup_product]["杯卖"]
-                total = p * cup_num
-                save_sale_record(city, location, cup_product, "杯卖", cup_num, p, total, "无", batch_remark)
-                success_msg.append(f"{cup_product} 杯卖 {cup_num}杯")
-            if bottle_num > 0:
-                p = PRODUCT_PRICES[bottle_product]["瓶卖"]
-                total = p * bottle_num
-                save_sale_record(city, location, bottle_product, "瓶卖", bottle_num, p, total, "无", batch_remark)
-                success_msg.append(f"{bottle_product} 瓶卖 {bottle_num}瓶")
-            if success_msg:
-                st.success(f"✅ 批量录入完成：{' | '.join(success_msg)}")
-            else:
-                st.warning("⚠️ 请填写杯数/瓶数")
+    # 核算
+    final_price = round(price * discount_val, 2)
+    total = final_price * qty
+    discount_text = f"{discount_val * 10:.1f}折"
+    st.success(f"💰 核算总价：{total:.2f} 元")
+
+    # 保存按钮
+    if st.button("✅ 保存订单（语音/手动都可）"):
+        save_sale_record(city, location, product, sales_type, qty, final_price, total, discount_text, remark)
+        st.success("✅ 保存成功，库存已同步！")
+        st.session_state.parsed_data = None
 
 # -------------------------- 库存管理 --------------------------
 elif page == "库存管理":
