@@ -1,20 +1,14 @@
 from __future__ import annotations
-import csv
-from io import BytesIO
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
-from uuid import uuid4
-
-import altair as alt
 import pandas as pd
 import streamlit as st
 
-# 基础配置
+# -------------------------- 基础配置 --------------------------
 APP_TITLE = "OKKISS 地推销售与库存管理"
-MANAGER_PASSWORD = "okkiss2026"
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
+
 DATA_FILE = DATA_DIR / "sales_records.csv"
 INVENTORY_FILE = DATA_DIR / "inventory_movements.csv"
 COST_FILE = DATA_DIR / "cost_records.csv"
@@ -22,165 +16,208 @@ PRICE_FILE = DATA_DIR / "price_settings.csv"
 
 PAGE_OPTIONS = ["销售录入", "库存管理", "费用与成本", "盈利分析与洞察"]
 
-# ---------------- 产品配置 ----------------
 PRODUCT_LIST = [
-    "草莓",
-    "小草莓",
-    "蜜桃",
-    "蜜桃乌龙无醇",
-    "阿斯蒂甜白",
-    "莫斯卡托桃红",
-    "绿宝石",
-    "紫宝石",
-    "快乐王子",
-    "长相思",
-    "赤霞珠"
+    "草莓", "小草莓", "蜜桃", "蜜桃乌龙无醇", "阿斯蒂甜白",
+    "莫斯卡托桃红", "绿宝石", "紫宝石", "快乐王子", "长相思", "赤霞珠"
 ]
 
 PRODUCT_PRICES = {
-    "草莓": {"瓶卖": 128, "杯卖": 38, "试饮": 0},
-    "小草莓": {"瓶卖": 98, "杯卖": 28, "试饮": 0},
-    "蜜桃": {"瓶卖": 118, "杯卖": 35, "试饮": 0},
-    "蜜桃乌龙无醇": {"瓶卖": 108, "杯卖": 32, "试饮": 0},
-    "阿斯蒂甜白": {"瓶卖": 158, "杯卖": 45, "试饮": 0},
-    "莫斯卡托桃红": {"瓶卖": 138, "杯卖": 40, "试饮": 0},
-    "绿宝石": {"瓶卖": 168, "杯卖": 48, "试饮": 0},
-    "紫宝石": {"瓶卖": 168, "杯卖": 48, "试饮": 0},
-    "快乐王子": {"瓶卖": 198, "杯卖": 55, "试饮": 0},
-    "长相思": {"瓶卖": 178, "杯卖": 50, "试饮": 0},
-    "赤霞珠": {"瓶卖": 228, "杯卖": 65, "试饮": 0}
+    "草莓": {"瓶卖": 128, "杯卖": 38},
+    "小草莓": {"瓶卖": 98, "杯卖": 28},
+    "蜜桃": {"瓶卖": 118, "杯卖": 35},
+    "蜜桃乌龙无醇": {"瓶卖": 108, "杯卖": 32},
+    "阿斯蒂甜白": {"瓶卖": 158, "杯卖": 45},
+    "莫斯卡托桃红": {"瓶卖": 138, "杯卖": 40},
+    "绿宝石": {"瓶卖": 168, "杯卖": 48},
+    "紫宝石": {"瓶卖": 168, "杯卖": 48},
+    "快乐王子": {"瓶卖": 198, "杯卖": 55},
+    "长相思": {"瓶卖": 178, "杯卖": 50},
+    "赤霞珠": {"瓶卖": 228, "杯卖": 65}
 }
 
-# 初始化数据文件
-def init_file(file_path: Path, columns: list):
-    if not file_path.exists():
-        df = pd.DataFrame(columns=columns)
-        df.to_csv(file_path, index=False, encoding="utf-8-sig")
+# -------------------------- 初始化文件 --------------------------
+def init_file(path, cols):
+    if not path.exists():
+        pd.DataFrame(columns=cols).to_csv(path, index=False, encoding="utf-8-sig")
 
 init_file(DATA_FILE, ["日期", "城市", "活动地点", "产品名称", "销售类型", "数量", "单价", "总价", "折扣", "备注"])
 init_file(INVENTORY_FILE, ["日期", "产品名称", "变动类型", "数量", "备注"])
-init_file(COST_FILE, ["日期", "项目", "金额", "备注"])
-init_file(PRICE_FILE, ["产品名称", "瓶卖价格", "杯卖价格", "试饮成本", "更新时间"])
+init_file(COST_FILE, ["日期", "费用类型", "金额", "备注"])
+init_file(PRICE_FILE, ["产品名称", "瓶卖", "杯卖"])
 
-# 主页面
+# -------------------------- 页面 --------------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.title(APP_TITLE)
 page = st.sidebar.radio("功能模块", PAGE_OPTIONS)
 
-# ---------------- 销售录入模块（含试饮、价格、折扣、图片上传） ----------------
+# ======================================================================================
+# ===================================== 销售录入 =======================================
+# ======================================================================================
 if page == "销售录入":
-    st.header("销售录入")
-
-    # 场次信息
+    st.header("✅ 销售录入")
     col1, col2 = st.columns(2)
-    with col1:
-        city = st.selectbox("城市", ["上海", "杭州", "南京", "苏州", "其他"])
-    with col2:
-        activity_date = st.date_input("活动日期", date.today())
+    with col1: city = st.selectbox("城市", ["上海", "杭州", "南京", "苏州", "其他"])
+    with col2: activity_date = st.date_input("活动日期", date.today())
 
-    location_options = ["上海来福士", "杭州湖滨银泰", "南京新街口", "苏州中心", "新增活动地点"]
-    location = st.selectbox("活动地点", location_options)
-    if location == "新增活动地点":
-        location = st.text_input("新增活动地点", placeholder="例如：杭州湖滨银泰A区")
+    location = st.selectbox("活动地点", ["上海来福士", "杭州湖滨银泰", "南京新街口", "苏州中心", "自定义"])
+    if location == "自定义": location = st.text_input("输入地点")
 
     st.divider()
-
-    # 快速录入
     st.subheader("快速录入")
-    with st.form("sales_entry_form"):
-        # 1. 产品选择
-        product_name = st.selectbox("产品名称/SKU", PRODUCT_LIST)
 
-        # 2. 产品图片展示 + 上传
-        st.write("**产品图片**")
-        image_path = Path("product_images") / f"{product_name}.jpg"
-        if image_path.exists():
-            st.image(str(image_path), caption=product_name, width=150)
-        else:
-            st.info(f"暂未上传 {product_name} 的产品图片")
-
-        # 界面上传图片功能
-        uploaded_image = st.file_uploader("上传/更新产品图片（jpg/png）", type=["jpg", "png"], key=product_name)
-        if uploaded_image is not None:
-            image_path.parent.mkdir(exist_ok=True)
-            with open(image_path, "wb") as f:
-                f.write(uploaded_image.getbuffer())
-            st.success(f"✅ {product_name} 的图片已上传成功！")
-
-        # 3. 销售类型选择（含试饮）
+    with st.form("sales_form"):
+        product = st.selectbox("产品名称", PRODUCT_LIST)
         sales_type = st.radio("销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
-
-        # 4. 数量输入
-        quantity = st.number_input("数量", min_value=1, value=1)
-
-        # 5. 价格与折扣
-        unit_price = 0
-        total_price = 0
-        discount_option = "无折扣"
+        qty = st.number_input("数量", min_value=1, value=1)
+        price = 0
+        total = 0
+        discount = "无"
 
         if sales_type in ["瓶卖", "杯卖"]:
-            base_price = PRODUCT_PRICES[product_name][sales_type]
-            unit_price = st.number_input(f"{sales_type}单价（元）", value=base_price)
-
+            price = PRODUCT_PRICES[product][sales_type]
             if sales_type == "瓶卖":
-                discount_option = st.radio("多瓶折扣", ["无折扣", "2瓶9折", "3瓶及以上8.5折"], horizontal=True)
-                if discount_option == "2瓶9折" and quantity >= 2:
-                    unit_price = round(unit_price * 0.9, 2)
-                elif discount_option == "3瓶及以上8.5折" and quantity >= 3:
-                    unit_price = round(unit_price * 0.85, 2)
+                discount = st.radio("折扣", ["无", "2瓶9折", "3瓶85折"], horizontal=True)
+                if discount == "2瓶9折" and qty >= 2:
+                    price = round(price * 0.9, 2)
+                if discount == "3瓶85折" and qty >= 3:
+                    price = round(price * 0.85, 2)
+            total = price * qty
+            st.success(f"💰 总价：{total} 元")
 
-            total_price = round(quantity * unit_price, 2)
-            st.write(f"**{sales_type}总价：{total_price} 元**")
-
-        # 备注
         remark = st.text_input("备注")
+        submit = st.form_submit_button("✅ 保存记录")
 
-        # 保存按钮
-        submitted = st.form_submit_button("保存记录")
-        if submitted:
-            new_record = {
-                "日期": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        if submit:
+            row = {
+                "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "城市": city,
                 "活动地点": location,
-                "产品名称": product_name,
+                "产品名称": product,
                 "销售类型": sales_type,
-                "数量": quantity,
-                "单价": unit_price,
-                "总价": total_price,
-                "折扣": discount_option,
+                "数量": qty,
+                "单价": price,
+                "总价": total,
+                "折扣": discount,
                 "备注": remark
             }
-
-            # 保存到销售记录
             df = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
-            df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+            df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
             df.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
 
-            # 同步更新库存
-            new_inventory = {
-                "日期": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "产品名称": product_name,
-                "变动类型": "出库",
-                "数量": -quantity,
-                "备注": f"{sales_type} {quantity} 件"
+            inv_row = {
+                "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "产品名称": product,
+                "变动类型": "出库" if sales_type != "试饮" else "试饮消耗",
+                "数量": -qty,
+                "备注": sales_type
             }
             inv_df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
-            inv_df = pd.concat([inv_df, pd.DataFrame([new_inventory])], ignore_index=True)
+            inv_df = pd.concat([inv_df, pd.DataFrame([inv_row])], ignore_index=True)
             inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
 
-            st.success("✅ 记录已保存，库存数据已同步更新！")
+            st.success("✅ 保存成功！库存已同步更新！")
 
-# ---------------- 库存管理模块 ----------------
+# ======================================================================================
+# ===================================== 库存管理 =======================================
+# ======================================================================================
 elif page == "库存管理":
-    st.header("库存管理")
-    st.info("后续可扩展：入库、出库、库存预警、物料/赠品管理")
+    st.header("📦 库存管理（实时可用）")
 
-# ---------------- 费用与成本模块 ----------------
+    inv = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
+    inv["数量"] = pd.to_numeric(inv["数量"], errors="coerce")
+    stock = inv.groupby("产品名称")["数量"].sum().reset_index()
+    stock.columns = ["产品名称", "当前库存"]
+    st.subheader("📊 当前实时库存")
+    st.dataframe(stock, use_container_width=True)
+
+    st.divider()
+    st.subheader("➡️ 入库登记")
+    with st.form("stock_in"):
+        p = st.selectbox("产品", PRODUCT_LIST)
+        n = st.number_input("入库数量", min_value=1)
+        btn_in = st.form_submit_button("✅ 确认入库")
+        if btn_in:
+            new_row = {"日期": datetime.now().strftime("%Y-%m-%d %H:%M"), "产品名称": p, "变动类型": "入库", "数量": n, "备注": "手动入库"}
+            df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
+            st.success("✅ 入库成功")
+
+    st.divider()
+    st.subheader("🗒 全部库存流水")
+    st.dataframe(inv, use_container_width=True)
+
+# ======================================================================================
+# =================================== 费用与成本 =======================================
+# ======================================================================================
 elif page == "费用与成本":
-    st.header("费用与成本")
-    st.info("后续可扩展：物料费、运费、杂费录入")
+    st.header("🧾 费用与成本（实时可用）")
 
-# ---------------- 盈利分析模块 ----------------
+    st.subheader("➕ 新增费用")
+    with st.form("cost_form"):
+        cost_type = st.selectbox("费用类型", ["物料费", "运费", "场地费", "人工费", "杂费"])
+        amount = st.number_input("金额（元）", min_value=0.01)
+        remark_cost = st.text_input("备注")
+        submit_cost = st.form_submit_button("✅ 保存费用")
+        if submit_cost:
+            row = {"日期": datetime.now().strftime("%Y-%m-%d %H:%M"), "费用类型": cost_type, "金额": amount, "备注": remark_cost}
+            df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+            df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+            df.to_csv(COST_FILE, index=False, encoding="utf-8-sig")
+            st.success("✅ 费用已记录")
+
+    st.divider()
+    cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+    st.subheader("📋 全部费用记录")
+    st.dataframe(cost_df, use_container_width=True)
+
+    if not cost_df.empty:
+        total_cost = cost_df["金额"].sum()
+        st.subheader(f"📊 总费用支出：**{total_cost:.2f} 元**")
+
+# ======================================================================================
+# ================================ 盈利分析与洞察 =======================================
+# ======================================================================================
 elif page == "盈利分析与洞察":
-    st.header("盈利分析与洞察")
-    st.info("后续可扩展：销量排行、试饮-成交转化率、成本核算、毛利分析")
+    st.header("📈 盈利分析与洞察（自动计算）")
+
+    sales = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
+    cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+    inv = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
+
+    if sales.empty:
+        st.warning("暂无销售数据")
+    else:
+        sales["数量"] = pd.to_numeric(sales["数量"], errors="coerce")
+        sales["总价"] = pd.to_numeric(sales["总价"], errors="coerce")
+
+        total_revenue = sales["总价"].sum()
+        total_bottle = sales[sales["销售类型"] == "瓶卖"]["数量"].sum()
+        total_cup = sales[sales["销售类型"] == "杯卖"]["数量"].sum()
+        total_test = sales[sales["销售类型"] == "试饮"]["数量"].sum()
+
+        col_a, col_b, col_c, col_d = st.columns(4)
+        with col_a: st.metric("总销售额", f"{total_revenue:.2f}元")
+        with col_b: st.metric("总瓶卖", f"{total_bottle}瓶")
+        with col_c: st.metric("总杯卖", f"{total_cup}杯")
+        with col_d: st.metric("总试饮", f"{total_test}杯")
+
+        st.divider()
+        st.subheader("🍷 各产品销量 & 试饮统计")
+        product_stats = sales.groupby(["产品名称", "销售类型"])["数量"].sum().unstack(fill_value=0)
+        st.dataframe(product_stats, use_container_width=True)
+
+        st.divider()
+        st.subheader("🎯 试饮 → 成交 分析（核心）")
+        if total_test > 0 and total_bottle > 0:
+            rate = total_bottle / total_test
+            st.success(f"✅ 平均 **{rate:.2f} 杯试饮 → 成交 1 瓶**")
+            st.info("可直接用来计算：一场活动试饮多少杯能卖1瓶")
+        else:
+            st.info("试饮或瓶卖数据不足，无法计算转化率")
+
+        st.divider()
+        total_cost = cost_df["金额"].sum() if not cost_df.empty else 0
+        profit = total_revenue - total_cost
+        st.subheader(f"💰 最终毛利：**{profit:.2f} 元**")
+        st.caption(f"总销售额 {total_revenue:.2f} 元 - 总费用 {total_cost:.2f} 元")
