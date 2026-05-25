@@ -36,7 +36,7 @@ PRODUCT_PRICES = {
     "赤霞珠": {"瓶卖": 228, "杯卖": 65}
 }
 
-# -------------------------- 产品图片（占位图，可替换） --------------------------
+# -------------------------- 产品图片 --------------------------
 PRODUCT_IMAGES = {
     "草莓": "https://via.placeholder.com/300x400.png?text=草莓",
     "小草莓": "https://via.placeholder.com/300x400.png?text=小草莓",
@@ -70,10 +70,11 @@ if "pwd_verified" not in st.session_state:
     st.session_state.pwd_verified = False
 
 # ======================================================================================
-# ===================================== 销售录入 =======================================
+# ===================================== 销售录入（已改：图片左移 + 自定义折扣） =======================================
 # ======================================================================================
 if page == "销售录入":
-    st.header("✅ 销售录入（带产品图 + 自定义单价）")
+    st.header("✅ 销售录入")
+
     col1, col2 = st.columns(2)
     with col1:
         city = st.selectbox("城市", ["上海", "杭州", "南京", "苏州", "其他"])
@@ -85,22 +86,25 @@ if page == "销售录入":
         location = st.text_input("输入地点")
 
     st.divider()
-    st.subheader("快速录入（左选产品，右看图片）")
 
-    form_col, img_col = st.columns([2, 1])
+    # ========== 产品图片 放在左边 ==========
+    img_col, form_col = st.columns([1, 2])
+    with img_col:
+        st.subheader("产品图")
+        product = st.selectbox("产品名称", PRODUCT_LIST)
+        st.image(PRODUCT_IMAGES[product], caption=product, width=250)
 
     with form_col:
-        product = st.selectbox("产品名称", PRODUCT_LIST)
         sales_type = st.radio("销售类型", ["瓶卖", "杯卖", "试饮"], horizontal=True)
 
         default_bottle = PRODUCT_PRICES[product]["瓶卖"]
         default_cup = PRODUCT_PRICES[product]["杯卖"]
 
-        # 定价选择
+        # 定价方式
         if sales_type == "瓶卖":
-            price_mode = st.radio("瓶卖定价方式", ["默认价格", "自定义单价"], horizontal=True)
+            price_mode = st.radio("瓶卖定价", ["默认价格", "自定义单价"], horizontal=True)
         elif sales_type == "杯卖":
-            price_mode = st.radio("杯卖定价方式", ["默认价格", "自定义单价"], horizontal=True)
+            price_mode = st.radio("杯卖定价", ["默认价格", "自定义单价"], horizontal=True)
         else:
             price_mode = "默认价格"
 
@@ -108,36 +112,33 @@ if page == "销售录入":
         price = 0.0
         discount = "无"
 
-        # 瓶卖逻辑
+        # 瓶卖
         if sales_type == "瓶卖":
             if price_mode == "默认价格":
                 price = default_bottle
             else:
-                price = st.number_input("自定义单价（元）", min_value=0.01, value=float(default_bottle), step=0.01)
-            # 折扣设置
-            discount = st.radio("折扣", ["无", "2瓶9折", "3瓶85折"], horizontal=True)
-            if discount == "2瓶9折" and qty >= 2:
-                price = round(price * 0.9, 2)
-            elif discount == "3瓶85折" and qty >= 3:
-                price = round(price * 0.85, 2)
+                price = st.number_input("自定义单价", min_value=0.01, value=float(default_bottle), step=0.01)
 
-        # 杯卖逻辑
+            # ========== 自定义折扣（手动输入） ==========
+            discount_val = st.number_input("折扣率（例：9折=0.9，85折=0.85）", min_value=0.1, max_value=1.0, value=1.0, step=0.01)
+            price = round(price * discount_val, 2)
+            discount = f"{int(discount_val*10)}折" if discount_val *10 == int(discount_val*10) else f"{discount_val*10:.1f}折"
+
+        # 杯卖
         elif sales_type == "杯卖":
             if price_mode == "默认价格":
                 price = default_cup
             else:
-                price = st.number_input("自定义单价（元）", min_value=0.01, value=float(default_cup), step=0.01)
+                price = st.number_input("自定义单价", min_value=0.01, value=float(default_cup), step=0.01)
 
-        # 试饮逻辑
+        # 试饮
         else:
             price = 0.0
 
         total = price * qty
         st.success(f"💰 总价：{total:.2f} 元")
-
         remark = st.text_input("备注")
 
-        # 保存按钮
         if st.button("✅ 保存记录"):
             row = {
                 "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -166,12 +167,7 @@ if page == "销售录入":
             inv_df = pd.concat([inv_df, pd.DataFrame([inv_row])], ignore_index=True)
             inv_df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
 
-            st.success("✅ 保存成功！库存已同步更新！")
-
-    with img_col:
-        st.subheader("产品实物图")
-        st.image(PRODUCT_IMAGES[product], caption=product, width=300)
-        st.caption("（可替换为真实酒品图）")
+            st.success("✅ 保存成功！库存已同步！")
 
 # ======================================================================================
 # ===================================== 库存管理 =======================================
