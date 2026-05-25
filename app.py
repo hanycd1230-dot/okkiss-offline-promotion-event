@@ -6,6 +6,7 @@ import streamlit as st
 
 # -------------------------- 基础配置 --------------------------
 APP_TITLE = "OKKISS 地推销售与库存管理"
+ADMIN_PWD = "okkiss2026"  # 后台密码：费用、盈利模块专用
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -45,10 +46,14 @@ init_file(INVENTORY_FILE, ["日期", "产品名称", "变动类型", "数量", "
 init_file(COST_FILE, ["日期", "费用类型", "金额", "备注"])
 init_file(PRICE_FILE, ["产品名称", "瓶卖", "杯卖"])
 
-# -------------------------- 页面 --------------------------
+# -------------------------- 页面初始化 --------------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.title(APP_TITLE)
 page = st.sidebar.radio("功能模块", PAGE_OPTIONS)
+
+# 密码状态缓存
+if "pwd_verified" not in st.session_state:
+    st.session_state.pwd_verified = False
 
 # ======================================================================================
 # ===================================== 销售录入 =======================================
@@ -56,11 +61,14 @@ page = st.sidebar.radio("功能模块", PAGE_OPTIONS)
 if page == "销售录入":
     st.header("✅ 销售录入")
     col1, col2 = st.columns(2)
-    with col1: city = st.selectbox("城市", ["上海", "杭州", "南京", "苏州", "其他"])
-    with col2: activity_date = st.date_input("活动日期", date.today())
+    with col1:
+        city = st.selectbox("城市", ["上海", "杭州", "南京", "苏州", "其他"])
+    with col2:
+        activity_date = st.date_input("活动日期", date.today())
 
     location = st.selectbox("活动地点", ["上海来福士", "杭州湖滨银泰", "南京新街口", "苏州中心", "自定义"])
-    if location == "自定义": location = st.text_input("输入地点")
+    if location == "自定义":
+        location = st.text_input("输入地点")
 
     st.divider()
     st.subheader("快速录入")
@@ -121,7 +129,7 @@ if page == "销售录入":
 # ===================================== 库存管理 =======================================
 # ======================================================================================
 elif page == "库存管理":
-    st.header("📦 库存管理（实时可用）")
+    st.header("📦 库存管理")
 
     inv = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
     inv["数量"] = pd.to_numeric(inv["数量"], errors="coerce")
@@ -137,7 +145,13 @@ elif page == "库存管理":
         n = st.number_input("入库数量", min_value=1)
         btn_in = st.form_submit_button("✅ 确认入库")
         if btn_in:
-            new_row = {"日期": datetime.now().strftime("%Y-%m-%d %H:%M"), "产品名称": p, "变动类型": "入库", "数量": n, "备注": "手动入库"}
+            new_row = {
+                "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "产品名称": p,
+                "变动类型": "入库",
+                "数量": n,
+                "备注": "手动入库"
+            }
             df = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             df.to_csv(INVENTORY_FILE, index=False, encoding="utf-8-sig")
@@ -148,76 +162,104 @@ elif page == "库存管理":
     st.dataframe(inv, use_container_width=True)
 
 # ======================================================================================
-# =================================== 费用与成本 =======================================
+# =================================== 费用与成本（需密码）======================================
 # ======================================================================================
 elif page == "费用与成本":
-    st.header("🧾 费用与成本（实时可用）")
+    st.header("🧾 费用与成本")
 
-    st.subheader("➕ 新增费用")
-    with st.form("cost_form"):
-        cost_type = st.selectbox("费用类型", ["物料费", "运费", "场地费", "人工费", "杂费"])
-        amount = st.number_input("金额（元）", min_value=0.01)
-        remark_cost = st.text_input("备注")
-        submit_cost = st.form_submit_button("✅ 保存费用")
-        if submit_cost:
-            row = {"日期": datetime.now().strftime("%Y-%m-%d %H:%M"), "费用类型": cost_type, "金额": amount, "备注": remark_cost}
-            df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
-            df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-            df.to_csv(COST_FILE, index=False, encoding="utf-8-sig")
-            st.success("✅ 费用已记录")
+    if not st.session_state.pwd_verified:
+        st.warning("🔒 该模块需要管理员密码才能访问")
+        input_pwd = st.text_input("请输入密码", type="password")
+        if st.button("验证密码"):
+            if input_pwd == ADMIN_PWD:
+                st.session_state.pwd_verified = True
+                st.rerun()
+            else:
+                st.error("❌ 密码错误，请重新输入")
+    else:
+        st.subheader("➕ 新增费用")
+        with st.form("cost_form"):
+            cost_type = st.selectbox("费用类型", ["物料费", "运费", "场地费", "人工费", "杂费"])
+            amount = st.number_input("金额（元）", min_value=0.01)
+            remark_cost = st.text_input("备注")
+            submit_cost = st.form_submit_button("✅ 保存费用")
+            if submit_cost:
+                row = {
+                    "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "费用类型": cost_type,
+                    "金额": amount,
+                    "备注": remark_cost
+                }
+                df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+                df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+                df.to_csv(COST_FILE, index=False, encoding="utf-8-sig")
+                st.success("✅ 费用已记录")
 
-    st.divider()
-    cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
-    st.subheader("📋 全部费用记录")
-    st.dataframe(cost_df, use_container_width=True)
+        st.divider()
+        cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+        st.subheader("📋 全部费用记录")
+        st.dataframe(cost_df, use_container_width=True)
 
-    if not cost_df.empty:
-        total_cost = cost_df["金额"].sum()
-        st.subheader(f"📊 总费用支出：**{total_cost:.2f} 元**")
+        if not cost_df.empty:
+            total_cost = cost_df["金额"].sum()
+            st.subheader(f"📊 总费用支出：**{total_cost:.2f} 元**")
 
 # ======================================================================================
-# ================================ 盈利分析与洞察 =======================================
+# ================================ 盈利分析与洞察（需密码）======================================
 # ======================================================================================
 elif page == "盈利分析与洞察":
-    st.header("📈 盈利分析与洞察（自动计算）")
+    st.header("📈 盈利分析与洞察")
 
-    sales = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
-    cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
-    inv = pd.read_csv(INVENTORY_FILE, encoding="utf-8-sig")
-
-    if sales.empty:
-        st.warning("暂无销售数据")
+    if not st.session_state.pwd_verified:
+        st.warning("🔒 该模块需要管理员密码才能访问")
+        input_pwd = st.text_input("请输入密码", type="password")
+        if st.button("验证密码"):
+            if input_pwd == ADMIN_PWD:
+                st.session_state.pwd_verified = True
+                st.rerun()
+            else:
+                st.error("❌ 密码错误，请重新输入")
     else:
-        sales["数量"] = pd.to_numeric(sales["数量"], errors="coerce")
-        sales["总价"] = pd.to_numeric(sales["总价"], errors="coerce")
+        sales = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
+        cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
 
-        total_revenue = sales["总价"].sum()
-        total_bottle = sales[sales["销售类型"] == "瓶卖"]["数量"].sum()
-        total_cup = sales[sales["销售类型"] == "杯卖"]["数量"].sum()
-        total_test = sales[sales["销售类型"] == "试饮"]["数量"].sum()
-
-        col_a, col_b, col_c, col_d = st.columns(4)
-        with col_a: st.metric("总销售额", f"{total_revenue:.2f}元")
-        with col_b: st.metric("总瓶卖", f"{total_bottle}瓶")
-        with col_c: st.metric("总杯卖", f"{total_cup}杯")
-        with col_d: st.metric("总试饮", f"{total_test}杯")
-
-        st.divider()
-        st.subheader("🍷 各产品销量 & 试饮统计")
-        product_stats = sales.groupby(["产品名称", "销售类型"])["数量"].sum().unstack(fill_value=0)
-        st.dataframe(product_stats, use_container_width=True)
-
-        st.divider()
-        st.subheader("🎯 试饮 → 成交 分析（核心）")
-        if total_test > 0 and total_bottle > 0:
-            rate = total_bottle / total_test
-            st.success(f"✅ 平均 **{rate:.2f} 杯试饮 → 成交 1 瓶**")
-            st.info("可直接用来计算：一场活动试饮多少杯能卖1瓶")
+        if sales.empty:
+            st.warning("暂无销售数据")
         else:
-            st.info("试饮或瓶卖数据不足，无法计算转化率")
+            sales["数量"] = pd.to_numeric(sales["数量"], errors="coerce")
+            sales["总价"] = pd.to_numeric(sales["总价"], errors="coerce")
 
-        st.divider()
-        total_cost = cost_df["金额"].sum() if not cost_df.empty else 0
-        profit = total_revenue - total_cost
-        st.subheader(f"💰 最终毛利：**{profit:.2f} 元**")
-        st.caption(f"总销售额 {total_revenue:.2f} 元 - 总费用 {total_cost:.2f} 元")
+            total_revenue = sales["总价"].sum()
+            total_bottle = sales[sales["销售类型"] == "瓶卖"]["数量"].sum()
+            total_cup = sales[sales["销售类型"] == "杯卖"]["数量"].sum()
+            total_test = sales[sales["销售类型"] == "试饮"]["数量"].sum()
+
+            col_a, col_b, col_c, col_d = st.columns(4)
+            with col_a:
+                st.metric("总销售额", f"{total_revenue:.2f}元")
+            with col_b:
+                st.metric("总瓶卖", f"{total_bottle}瓶")
+            with col_c:
+                st.metric("总杯卖", f"{total_cup}杯")
+            with col_d:
+                st.metric("总试饮", f"{total_test}杯")
+
+            st.divider()
+            st.subheader("🍷 各产品销量 & 试饮统计")
+            product_stats = sales.groupby(["产品名称", "销售类型"])["数量"].sum().unstack(fill_value=0)
+            st.dataframe(product_stats, use_container_width=True)
+
+            st.divider()
+            st.subheader("🎯 试饮 → 成交 分析")
+            if total_test > 0 and total_bottle > 0:
+                rate = total_bottle / total_test
+                st.success(f"✅ 平均 **{rate:.2f} 杯试饮 → 成交 1 瓶**")
+                st.info("可直接核算单瓶成交对应的试饮成本")
+            else:
+                st.info("试饮或瓶卖数据不足，暂时无法计算转化率")
+
+            st.divider()
+            total_cost = cost_df["金额"].sum() if not cost_df.empty else 0
+            profit = total_revenue - total_cost
+            st.subheader(f"💰 最终毛利：**{profit:.2f} 元**")
+            st.caption(f"总销售额 {total_revenue:.2f} 元 - 总费用 {total_cost:.2f} 元")
