@@ -36,7 +36,7 @@ PRODUCT_PRICES = {
     "赤霞珠": {"瓶卖": 228, "杯卖": 65}
 }
 
-# -------------------------- 产品图片（网络占位图，可替换成你的图） --------------------------
+# -------------------------- 产品图片（占位图，可替换） --------------------------
 PRODUCT_IMAGES = {
     "草莓": "https://via.placeholder.com/300x400.png?text=草莓",
     "小草莓": "https://via.placeholder.com/300x400.png?text=小草莓",
@@ -87,7 +87,6 @@ if page == "销售录入":
     st.divider()
     st.subheader("快速录入（左选产品，右看图片）")
 
-    # 左右分栏：左边表单，右边产品图
     form_col, img_col = st.columns([2, 1])
 
     with form_col:
@@ -145,7 +144,6 @@ if page == "销售录入":
 
     with img_col:
         st.subheader("产品实物图")
-        # 显示当前选中产品的图片
         st.image(PRODUCT_IMAGES[product], caption=product, width=300)
         st.caption("（可替换为真实酒品图）")
 
@@ -199,3 +197,91 @@ elif page == "费用与成本":
                 st.session_state.pwd_verified = True
                 st.rerun()
             else:
+                st.error("❌ 密码错误，请重新输入")
+    else:
+        st.subheader("➕ 新增费用")
+        with st.form("cost_form"):
+            cost_type = st.selectbox("费用类型", ["物料费", "运费", "场地费", "人工费", "杂费"])
+            amount = st.number_input("金额（元）", min_value=0.01)
+            remark_cost = st.text_input("备注")
+            submit_cost = st.form_submit_button("✅ 保存费用")
+            if submit_cost:
+                row = {
+                    "日期": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "费用类型": cost_type,
+                    "金额": amount,
+                    "备注": remark_cost
+                }
+                df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+                df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+                df.to_csv(COST_FILE, index=False, encoding="utf-8-sig")
+                st.success("✅ 费用已记录")
+
+        st.divider()
+        cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+        st.subheader("📋 全部费用记录")
+        st.dataframe(cost_df, use_container_width=True)
+
+        if not cost_df.empty:
+            total_cost = cost_df["金额"].sum()
+            st.subheader(f"📊 总费用支出：**{total_cost:.2f} 元**")
+
+# ======================================================================================
+# ================================ 盈利分析与洞察（需密码）======================================
+# ======================================================================================
+elif page == "盈利分析与洞察":
+    st.header("📈 盈利分析与洞察")
+
+    if not st.session_state.pwd_verified:
+        st.warning("🔒 该模块需要管理员密码才能访问")
+        input_pwd = st.text_input("请输入密码", type="password")
+        if st.button("验证密码"):
+            if input_pwd == ADMIN_PWD:
+                st.session_state.pwd_verified = True
+                st.rerun()
+            else:
+                st.error("❌ 密码错误，请重新输入")
+    else:
+        sales = pd.read_csv(DATA_FILE, encoding="utf-8-sig")
+        cost_df = pd.read_csv(COST_FILE, encoding="utf-8-sig")
+
+        if sales.empty:
+            st.warning("暂无销售数据")
+        else:
+            sales["数量"] = pd.to_numeric(sales["数量"], errors="coerce")
+            sales["总价"] = pd.to_numeric(sales["总价"], errors="coerce")
+
+            total_revenue = sales["总价"].sum()
+            total_bottle = sales[sales["销售类型"] == "瓶卖"]["数量"].sum()
+            total_cup = sales[sales["销售类型"] == "杯卖"]["数量"].sum()
+            total_test = sales[sales["销售类型"] == "试饮"]["数量"].sum()
+
+            col_a, col_b, col_c, col_d = st.columns(4)
+            with col_a:
+                st.metric("总销售额", f"{total_revenue:.2f}元")
+            with col_b:
+                st.metric("总瓶卖", f"{total_bottle}瓶")
+            with col_c:
+                st.metric("总杯卖", f"{total_cup}杯")
+            with col_d:
+                st.metric("总试饮", f"{total_test}杯")
+
+            st.divider()
+            st.subheader("🍷 各产品销量 & 试饮统计")
+            product_stats = sales.groupby(["产品名称", "销售类型"])["数量"].sum().unstack(fill_value=0)
+            st.dataframe(product_stats, use_container_width=True)
+
+            st.divider()
+            st.subheader("🎯 试饮 → 成交 分析")
+            if total_test > 0 and total_bottle > 0:
+                rate = total_bottle / total_test
+                st.success(f"✅ 平均 **{rate:.2f} 杯试饮 → 成交 1 瓶**")
+                st.info("可直接核算单瓶成交对应的试饮成本")
+            else:
+                st.info("试饮或瓶卖数据不足，暂时无法计算转化率")
+
+            st.divider()
+            total_cost = cost_df["金额"].sum() if not cost_df.empty else 0
+            profit = total_revenue - total_cost
+            st.subheader(f"💰 最终毛利：**{profit:.2f} 元**")
+            st.caption(f"总销售额 {total_revenue:.2f} 元 - 总费用 {total_cost:.2f} 元")
