@@ -131,6 +131,32 @@ def download_csv(df, filename):
         mime="text/csv"
     )
 
+# 【新增】仅管理员可用：一键清空所有测试数据
+def clear_all_test_data():
+    files = [DATA_FILE, INVENTORY_FILE, COST_FILE, RETURN_FILE, PRODUCT_COST_FILE]
+    for f in files:
+        if f.exists():
+            f.unlink()
+    # 重新初始化空白文件
+    init_file(DATA_FILE, ["日期", "城市", "活动地点", "产品名称", "销售类型", "数量", "单价", "总价", "折扣", "备注"])
+    init_file(INVENTORY_FILE, ["日期", "产品名称", "变动类型", "数量", "备注"])
+    init_file(COST_FILE, ["日期", "费用类型", "金额", "备注"])
+    init_file(RETURN_FILE, ["日期", "产品名称", "销售类型", "数量", "原因", "备注"])
+    init_file(PRODUCT_COST_FILE, ["产品名称", "成本单价"])
+    # 重置默认成本
+    df_cost = pd.DataFrame({"产品名称": PRODUCT_LIST, "成本单价": [0]*len(PRODUCT_LIST)})
+    df_cost.to_csv(PRODUCT_COST_FILE, index=False, encoding="utf-8-sig")
+
+# ===================== 侧边栏：管理员数据重置入口 =====================
+with st.sidebar:
+    st.divider()
+    if st.session_state.pwd_verified:
+        st.warning("⚠️ 管理员功能：一键清空测试数据（不可恢复）")
+        if st.button("🗑️ 清空所有测试数据", type="secondary"):
+            clear_all_test_data()
+            st.success("✅ 所有数据已清空，系统已重置为初始状态！")
+            st.rerun()
+
 # ===================== 1. 销售录入 =====================
 if page == "销售录入":
     st.header("✅ 销售录入（纯手动）")
